@@ -1,6 +1,6 @@
 import sqlite3
-import datetime
 import uuid
+import os
 
 DB_NAME = "chatbot.db"
 
@@ -12,7 +12,7 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
-    
+
     # Create conversations table
     c.execute('''
         CREATE TABLE IF NOT EXISTS conversations (
@@ -20,7 +20,7 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
     # Create messages table
     c.execute('''
         CREATE TABLE IF NOT EXISTS messages (
@@ -33,13 +33,7 @@ def init_db():
             FOREIGN KEY (conversation_id) REFERENCES conversations (id)
         )
     ''')
-    
-    # Migration: Add sentiment column if it doesn't exist (for existing DBs)
-    try:
-        c.execute('ALTER TABLE messages ADD COLUMN sentiment TEXT')
-    except sqlite3.OperationalError:
-        pass
-    
+
     conn.commit()
     conn.close()
 
@@ -53,25 +47,38 @@ def create_conversation():
 
 def save_message(conversation_id, sender, text, sentiment=None):
     conn = get_db_connection()
-    conn.execute('INSERT INTO messages (conversation_id, sender, text, sentiment) VALUES (?, ?, ?, ?)',
-                 (conversation_id, sender, text, sentiment))
+    conn.execute(
+        'INSERT INTO messages (conversation_id, sender, text, sentiment) VALUES (?, ?, ?, ?)',
+        (conversation_id, sender, text, sentiment)
+    )
     conn.commit()
     conn.close()
 
 def get_conversation_history(conversation_id):
     conn = get_db_connection()
-    messages = conn.execute('SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC',
-                            (conversation_id,)).fetchall()
+    messages = conn.execute(
+        'SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC',
+        (conversation_id,)
+    ).fetchall()
     conn.close()
     return [dict(msg) for msg in messages]
 
 def get_all_conversations():
     conn = get_db_connection()
     conversations = conn.execute('''
-        SELECT c.id, c.created_at, 
-               (SELECT text FROM messages WHERE conversation_id = c.id ORDER BY timestamp DESC LIMIT 1) as last_message
+        SELECT c.id, c.created_at,
+               (SELECT text FROM messages 
+                WHERE conversation_id = c.id 
+                ORDER BY timestamp DESC LIMIT 1) AS last_message
         FROM conversations c
         ORDER BY c.created_at DESC
     ''').fetchall()
     conn.close()
     return [dict(conv) for conv in conversations]
+
+
+if not os.path.exists(DB_NAME):
+    init_db()
+else:
+    # Ensure tables exist even if DB file already existed
+    init_db()
